@@ -8,16 +8,16 @@ find_anon_by_opt() {
   uci -q show "$pkg" | sed -n "s/^${pkg}\.\(@${type}\[[0-9]\+\]\)\.${opt}='${val}'$/\1/p" | head -n1
 }
 
-
-uci -q delete dhcp.meshif 2>/dev/null || true
-uci -q set dhcp.meshif='dhcp'
-uci -q set dhcp.meshif.interface='meshif'
-uci -q set dhcp.meshif.start='50'
-uci -q set dhcp.meshif.limit='150'
-uci -q set dhcp.meshif.leasetime='6h'
-uci -q set dhcp.meshif.ra='server'
-uci -q commit dhcp
-
+if [ ! -f /usr/is_bridge ]; then
+    uci -q delete dhcp.meshif 2>/dev/null || true
+    uci -q set dhcp.meshif='dhcp'
+    uci -q set dhcp.meshif.interface='meshif'
+    uci -q set dhcp.meshif.start='50'
+    uci -q set dhcp.meshif.limit='150'
+    uci -q set dhcp.meshif.leasetime='6h'
+    uci -q set dhcp.meshif.ra='server'
+    uci -q commit dhcp
+fi
 
 
 uci -q delete network.bat0 2>/dev/null || true
@@ -32,8 +32,12 @@ uci -q set network.bat0.distributed_arp_table='1'
 uci -q set network.bat0.fragmentation='1'
 uci -q set network.bat0.network_coding='0'
 uci -q set network.bat0.orig_interval='1000'
-uci -q set network.bat0.gw_mode='server'
-uci -q set network.bat0.gw_bandwidth='10000/2000'
+if [ -f /usr/is_bridge ]; then
+    uci -q set network.bat0.gw_mode='client'
+else
+    uci -q set network.bat0.gw_mode='server'
+    uci -q set network.bat0.gw_bandwidth='10000/2000' 
+fi
 uci -q set network.bat0.hop_penalty='25'
 uci -q set network.bat0.isolation_mark='0x00000000/0x00000000'
 uci -q set network.bat0.log_level='0'
@@ -58,6 +62,25 @@ uci -q delete network."$brmesh".ports 2>/dev/null || true
 uci -q add_list network."$brmesh".ports='bat0'
 
 
+if [ -f /usr/is_bridge ]; then
+
+    landev=$(uci -q get network.lan.device)
+    
+    if [ -n "$landev" ]; then
+        lanports=$(uci -q get network."$landev".ports)
+        uci -q delete network."$landev".ports
+        for port in $lanports; do
+            uci -q add_list network."$brmesh".ports="$port"
+        done
+    fi
+
+    if [ -f /usr/rc.local.bridge ]; then
+        cp -f /usr/rc.local.bridge /etc/rc.local
+        chmod 755 /etc/rc.local
+    fi
+fi
+
+
 uci -q delete network.meshif 2>/dev/null || true
 uci -q set network.meshif='interface'
 uci -q set network.meshif.device='br-meshif'
@@ -70,7 +93,6 @@ uci -q add_list network.meshif.dns='203.237.32.100'
 uci -q set network.meshif.ipv6='1'
 
 uci -q commit network
-
 
 [ -f /etc/config/wireless ] || wifi config
 uci -q set wireless.radio0.disabled='0'
@@ -101,11 +123,9 @@ uci -q set firewall."$z".input='ACCEPT'
 uci -q set firewall."$z".output='ACCEPT'
 uci -q set firewall."$z".forward='ACCEPT'
 
-
 f="$(uci -q add firewall forwarding)"
 uci -q set firewall."$f".src='meshif'
 uci -q set firewall."$f".dest='wan'
-
 
 w="$(find_anon_by_opt firewall zone name wan || true)"
 if [ -n "${w:-}" ]; then

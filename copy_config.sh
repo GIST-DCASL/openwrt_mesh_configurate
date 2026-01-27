@@ -116,11 +116,35 @@ if [[ -d "$FILES_DIR" ]]; then
   log "Applying overlay to $DEST_FILES_DIR..."
   mkdir -p "$DEST_FILES_DIR"
   
-  # [변경 사항 1] 불필요해진 Exclude 로직 제거 (이제 변수로 제어하므로 파일 제외 불필요)
   log "Copying files using rsync..."
   rsync -av "${FILES_DIR}/" "${DEST_FILES_DIR}/"
 
-  # [변경 사항 2] is_bridge 변수 주입 (Variable Injection)
+  # =========================================================
+  # [추가 기능 1] Bridge 모드일 때 rc.local 교체 로직
+  # =========================================================
+  if [[ "$BUILD_MODE" == "bridge" ]]; then
+      SRC_RC_BRIDGE="${DEST_FILES_DIR}/usr/rc.local.bridge"
+      DEST_RC_LOCAL="${DEST_FILES_DIR}/etc/rc.local"
+
+      if [[ -f "$SRC_RC_BRIDGE" ]]; then
+          log "Bridge Mode Detected: Overwriting rc.local with rc.local.bridge..."
+          
+          # 1. 파일 이동 (Move): 
+          # 복사 대신 이동을 사용하여 불필요한 원본(/usr/rc.local.bridge)을 
+          # 펌웨어 이미지에 남기지 않습니다. 용량 절약 및 혼동 방지.
+          mv "$SRC_RC_BRIDGE" "$DEST_RC_LOCAL"
+          
+          # 2. 실행 권한 보장
+          chmod 755 "$DEST_RC_LOCAL"
+          
+          log "  -> Success: /etc/rc.local replaced."
+      else
+          log "Warning: Bridge mode selected but '${SRC_RC_BRIDGE}' not found."
+      fi
+  fi
+  # =========================================================
+
+  # [추가 기능 2] is_bridge 변수 주입 (Variable Injection)
   CUSTOM_SCRIPT="${DEST_FILES_DIR}/etc/uci-defaults/98_network_custom_setting"
   
   if [[ -f "$CUSTOM_SCRIPT" ]]; then
@@ -131,8 +155,6 @@ if [[ -d "$FILES_DIR" ]]; then
       fi
 
       log "Injecting mode into script: is_bridge=${BRIDGE_VAL}"
-      
-      # sed를 사용하여 is_bridge=0 (또는 다른 숫자) 패턴을 찾아 현재 모드 값으로 치환
       sed -i "s/^is_bridge=[0-9]\+/is_bridge=${BRIDGE_VAL}/" "$CUSTOM_SCRIPT"
       
   else

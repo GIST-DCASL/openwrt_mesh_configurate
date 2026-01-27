@@ -101,40 +101,34 @@ fi
 
 uci set network."$br_mesh_section".type='bridge'
 # 기존 포트 목록 초기화 (중복 방지)
-uci -q delete network."$br_mesh_section".ports
+uci -q delete network."$br_mesh_section".ports 2>/dev/null || true
+uci add_list network."$br_mesh_section".ports='bat0'
 uci add_list network."$br_mesh_section".ports='bat0'
 
 # 6. [핵심 수정] 포트 마이그레이션 로직 (Bridge Mode일 때)
 if [ "$is_bridge" = "1" ]; then
-    # 기존 LAN 디바이스 확인 (보통 br-lan)
-    lan_dev_name=$(uci -q get network.lan.device)
+# 기존 LAN 디바이스 이름 (보통 br-lan)
+	lan_dev_name="$(uci -q get network.lan.device || true)"
 
-    if [ -n "$lan_dev_name" ]; then
-        # LAN 포트 가져오기
-        current_lan_ports=$(uci -q get network."$lan_dev_name".ports)
-        
-        # 가져온 포트들을 br-meshif에 추가
-        for port in $current_lan_ports; do
-            uci add_list network."$br_mesh_section".ports="$port"
-        done
+	if [ -n "$lan_dev_name" ]; then
+		# ★ device 섹션을 name 옵션으로 역검색 (@device[x])
+		lan_dev_sec="$(find_anon_by_opt network device name "$lan_dev_name" || true)"
 
-        # [중요] WAN 포트도 있다면 가져와서 추가 (전체 포트 브리지화)
-        wan_dev_curr=$(uci -q get network.wan.device || true)
-        if [ -n "$wan_dev_curr" ]; then
-             uci add_list network."$br_mesh_section".ports="$wan_dev_curr"
-             uci -q delete network.wan  # WAN 인터페이스 삭제 (충돌 방지)
-        fi
+		# 섹션을 못 찾으면(드물게 named section일 때) lan_dev_name로 fallback
+		[ -n "$lan_dev_sec" ] || lan_dev_sec="$lan_dev_name"
 
-        # [버그 수정] 기존 br-lan에서 포트를 확실하게 제거해야 충돌이 안 남
-        uci -q delete network."$lan_dev_name".ports
-        # 안전을 위해 기존 LAN 인터페이스도 삭제 (Mesh IP가 대체함)
-        uci -q delete network.lan 
-    fi
+		# ★ 여기서부터는 섹션 ID로 ports 접근
+		current_lan_ports="$(uci -q get network."$lan_dev_sec".ports || true)"
+
+		for port in $current_lan_ports; do
+		uci add_list network."$br_mesh_section".ports="$port"
+		done
+
+		uci -q delete network."$lan_dev_sec".ports || true
+		uci -q delete network.lan || true
+	fi
     
-    if [ -f /usr/rc.local.bridge ]; then
-        cp -f /usr/rc.local.bridge /etc/rc.local
-        chmod 755 /etc/rc.local
-    fi
+
 fi
 
 # 7. Mesh IP 설정 (Static IP)

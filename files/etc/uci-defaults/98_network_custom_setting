@@ -8,6 +8,32 @@ find_anon_by_opt() {
   uci -q show "$pkg" | sed -n "s/^${pkg}\.\(@${type}\[[0-9]\+\]\)\.${opt}='${val}'$/\1/p" | head -n1
 }
 
+wan_dev=$(uci -q get network.wan.device || true)
+lan_dev=$(uci -q get network.lan.device || true)
+
+if [ -n "$wan_dev" ] && [ -n "$lan_dev" ]; then
+    : 
+elif [ ! -f /usr/is_bridge ]; then
+    if [ -z "$wan_dev" ] && [ -n "$lan_dev" ]; then
+        lan_ports=$(uci -q get network."$lan_dev".ports || echo "$lan_dev")
+        
+        uci -q set network.wan.device="$lan_ports"
+        uci -q delete network.lan
+        uci -q commit network
+    fi
+else
+    if [ -z "$lan_dev" ] && [ -n "$wan_dev" ]; then
+        uci -q set network.lan='interface'
+        uci -q set network.lan.device='br-lan'
+        uci -q set network.br-lan='device'
+        uci -q set network.br-lan.type='bridge'
+        uci -q set network.br-lan.ports="$wan_dev"
+        
+        uci -q delete network.wan
+        uci -q commit network
+    fi
+fi
+
 if [ ! -f /usr/is_bridge ]; then
     uci -q delete dhcp.meshif 2>/dev/null || true
     uci -q set dhcp.meshif='dhcp'
@@ -52,33 +78,58 @@ uci -q set network.mesh.master='bat0'
 uci -q set network.mesh.mtu='1536'
 
 
-brmesh="$(find_anon_by_opt network device name br-meshif || true)"
-if [ -z "${brmesh:-}" ]; then
-  brmesh="$(uci -q add network device)"
+
+brmesh="br-meshif"
+
+
+
+if [ -z "$(find_anon_by_opt network device name "$brmesh" || true)" ]; then
+    uci -q add network device > /dev/null
+
 fi
-uci -q set network."$brmesh".name='br-meshif'
-uci -q set network."$brmesh".type='bridge'
-uci -q delete network."$brmesh".ports 2>/dev/null || true
-uci -q add_list network."$brmesh".ports='bat0'
+
+
+
+
+br_mesh_section=$(find_anon_by_opt network device name "$brmesh")
+if [ -z "$br_mesh_section" ]; then
+    br_mesh_section=$(uci add network device)
+    uci set network."$br_mesh_section".name="$brmesh"
+fi
+
+uci set network."$br_mesh_section".type='bridge'
+
+uci -q delete network."$br_mesh_section".ports
+
+uci add_list network."$br_mesh_section".ports='bat0'
+
 
 
 if [ -f /usr/is_bridge ]; then
+    lan_dev_name=$(uci -q get network.lan.device)
 
-    landev=$(uci -q get network.lan.device)
-    
-    if [ -n "$landev" ]; then
-        lanports=$(uci -q get network."$landev".ports)
-        uci -q delete network."$landev".ports
-        for port in $lanports; do
-            uci -q add_list network."$brmesh".ports="$port"
+
+    if [ -n "$lan_dev_name" ]; then
+
+        current_lan_ports=$(uci -q get network."$lan_dev_name".ports)
+
+
+        for port in $current_lan_ports; do
+            uci add_list network."$br_mesh_section".ports="$port"
         done
+
+
+        uci -q delete network."$lan_dev_name".ports
     fi
+    
 
     if [ -f /usr/rc.local.bridge ]; then
         cp -f /usr/rc.local.bridge /etc/rc.local
         chmod 755 /etc/rc.local
     fi
 fi
+
+
 
 
 uci -q delete network.meshif 2>/dev/null || true

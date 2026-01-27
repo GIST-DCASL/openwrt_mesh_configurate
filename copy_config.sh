@@ -116,15 +116,29 @@ if [[ -d "$FILES_DIR" ]]; then
   log "Applying overlay to $DEST_FILES_DIR..."
   mkdir -p "$DEST_FILES_DIR"
   
-  EXCLUDE_PATTERN=""
-  if [[ "$BUILD_MODE" == "server" ]]; then
-    EXCLUDE_PATTERN="usr/is_bridge"
+  # [변경 사항 1] 불필요해진 Exclude 로직 제거 (이제 변수로 제어하므로 파일 제외 불필요)
+  log "Copying files using rsync..."
+  rsync -av "${FILES_DIR}/" "${DEST_FILES_DIR}/"
+
+  # [변경 사항 2] is_bridge 변수 주입 (Variable Injection)
+  CUSTOM_SCRIPT="${DEST_FILES_DIR}/etc/uci-defaults/98_network_custom_setting"
+  
+  if [[ -f "$CUSTOM_SCRIPT" ]]; then
+      if [[ "$BUILD_MODE" == "bridge" ]]; then
+          BRIDGE_VAL="1"
+      else
+          BRIDGE_VAL="0"
+      fi
+
+      log "Injecting mode into script: is_bridge=${BRIDGE_VAL}"
+      
+      # sed를 사용하여 is_bridge=0 (또는 다른 숫자) 패턴을 찾아 현재 모드 값으로 치환
+      sed -i "s/^is_bridge=[0-9]\+/is_bridge=${BRIDGE_VAL}/" "$CUSTOM_SCRIPT"
+      
   else
-    EXCLUDE_PATTERN="usr/is_server"
+      log "Warning: '${CUSTOM_SCRIPT}' not found. Skipping variable injection."
   fi
 
-  log "Copying files (Excluding: $EXCLUDE_PATTERN)..."
-  rsync -av --exclude "$EXCLUDE_PATTERN" "${FILES_DIR}/" "${DEST_FILES_DIR}/"
 else
   log "Warning: Files directory '$FILES_DIR' not found. Skipping overlay."
 fi

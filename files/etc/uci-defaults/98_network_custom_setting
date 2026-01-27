@@ -4,7 +4,6 @@
 set -eu
 
 # ========================================================
-# [설정 변수] 배포 시 이 값을 변경하여 모드를 결정합니다.
 # 0: Router Mode (기본값)
 # 1: Bridge Mode (Mesh AP 모드)
 is_bridge=0
@@ -18,11 +17,10 @@ find_anon_by_opt() {
 wan_dev=$(uci -q get network.wan.device || true)
 lan_dev=$(uci -q get network.lan.device || true)
 
-# 1. 초기 WAN/LAN 포트 정리 로직 (기존 유지하되 변수 적용)
+
 if [ -n "$wan_dev" ] && [ -n "$lan_dev" ]; then
     :
 elif [ "$is_bridge" != "1" ]; then
-    # 브리지 모드가 아닐 때 (Router Mode) 동작
     if [ -z "$wan_dev" ] && [ -n "$lan_dev" ]; then
         lan_ports=$(uci -q get network."$lan_dev".ports || echo "$lan_dev")
         uci -q set network.wan.device="$lan_ports"
@@ -30,7 +28,6 @@ elif [ "$is_bridge" != "1" ]; then
         uci -q commit network
     fi
 else
-    # 브리지 모드일 때 (Bridge Mode) 초기 포트 설정
     if [ -z "$lan_dev" ] && [ -n "$wan_dev" ]; then
         uci -q set network.lan='interface'
         uci -q set network.lan.device='br-lan'
@@ -42,7 +39,6 @@ else
     fi
 fi
 
-# 2. DHCP 설정 (Router 모드일 때만 활성화)
 if [ "$is_bridge" != "1" ]; then
     uci -q delete dhcp.meshif 2>/dev/null || true
     uci -q set dhcp.meshif='dhcp'
@@ -54,7 +50,6 @@ if [ "$is_bridge" != "1" ]; then
     uci -q commit dhcp
 fi
 
-# 3. BATMAN-ADV 설정
 uci -q delete network.bat0 2>/dev/null || true
 uci -q set network.bat0='interface'
 uci -q set network.bat0.proto='batadv'
@@ -69,10 +64,8 @@ uci -q set network.bat0.network_coding='0'
 uci -q set network.bat0.orig_interval='1000'
 
 if [ "$is_bridge" = "1" ]; then
-    # Bridge Mode: Gateway Client
     uci -q set network.bat0.gw_mode='client'
 else
-    # Router Mode: Gateway Server
     uci -q set network.bat0.gw_mode='server'
     uci -q set network.bat0.gw_bandwidth='10000/2000'
 fi
@@ -82,17 +75,14 @@ uci -q set network.bat0.log_level='0'
 uci -q set network.bat0.multicast_mode='1'
 uci -q set network.bat0.multicast_fanout='16'
 
-# 4. Mesh Interface 설정
 uci -q delete network.mesh 2>/dev/null || true
 uci -q set network.mesh='interface'
 uci -q set network.mesh.proto='batadv_hardif'
 uci -q set network.mesh.master='bat0'
 uci -q set network.mesh.mtu='1536'
 
-# 5. Bridge Device (br-meshif) 생성 로직
 brmesh="br-meshif"
 
-# 기존에 이름 없는 디바이스 생성 문제 해결을 위해 명시적 생성
 br_mesh_section=$(find_anon_by_opt network device name "$brmesh")
 if [ -z "$br_mesh_section" ]; then
     br_mesh_section=$(uci add network device)
@@ -100,24 +90,18 @@ if [ -z "$br_mesh_section" ]; then
 fi
 
 uci set network."$br_mesh_section".type='bridge'
-# 기존 포트 목록 초기화 (중복 방지)
 uci -q delete network."$br_mesh_section".ports 2>/dev/null || true
 uci add_list network."$br_mesh_section".ports='bat0'
-uci add_list network."$br_mesh_section".ports='bat0'
 
-# 6. [핵심 수정] 포트 마이그레이션 로직 (Bridge Mode일 때)
+
 if [ "$is_bridge" = "1" ]; then
-# 기존 LAN 디바이스 이름 (보통 br-lan)
 	lan_dev_name="$(uci -q get network.lan.device || true)"
 
 	if [ -n "$lan_dev_name" ]; then
-		# ★ device 섹션을 name 옵션으로 역검색 (@device[x])
 		lan_dev_sec="$(find_anon_by_opt network device name "$lan_dev_name" || true)"
 
-		# 섹션을 못 찾으면(드물게 named section일 때) lan_dev_name로 fallback
 		[ -n "$lan_dev_sec" ] || lan_dev_sec="$lan_dev_name"
 
-		# ★ 여기서부터는 섹션 ID로 ports 접근
 		current_lan_ports="$(uci -q get network."$lan_dev_sec".ports || true)"
 
 		for port in $current_lan_ports; do
@@ -131,7 +115,6 @@ if [ "$is_bridge" = "1" ]; then
 
 fi
 
-# 7. Mesh IP 설정 (Static IP)
 uci -q delete network.meshif 2>/dev/null || true
 uci -q set network.meshif='interface'
 uci -q set network.meshif.device='br-meshif'
@@ -145,7 +128,6 @@ uci -q set network.meshif.ipv6='1'
 
 uci -q commit network
 
-# 8. Wireless 설정 (기존 로직 유지)
 [ -f /etc/config/wireless ] || wifi config
 uci -q set wireless.radio0.disabled='0'
 uci -q delete wireless.default_radio0 2>/dev/null || true
@@ -163,7 +145,7 @@ uci -q set wireless.wmesh.mesh_ttl='1'
 uci -q set wireless.wmesh.disabled='0'
 uci -q commit wireless
 
-# 9. Firewall 설정
+
 z="$(find_anon_by_opt firewall zone name meshif || true)"
 if [ -z "${z:-}" ]; then
   z="$(uci -q add firewall zone)"

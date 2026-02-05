@@ -2,6 +2,7 @@
 set -euo pipefail
 
 TAG="v22.03.5"
+CUSTOM_FEEDS_FILE=""
 
 REMOTE_DEFAULT="https://github.com/openwrt/openwrt.git"
 
@@ -13,6 +14,8 @@ DEST_DIR="${REPO_ROOT}/openwrt"
 REMOTE="$REMOTE_DEFAULT"
 APPLY_OVERLAY=1                  
 QUIET=0
+CUSTOM_FEEDS_FILE="${REPO_ROOT}/custom_feeds.txt"
+
 
 usage() {
   cat <<EOF
@@ -92,6 +95,41 @@ if [[ -f "feeds.conf.default" ]]; then
 else
   log "Warning: feeds.conf.default not found. Skipping feed URL modification."
 fi
+
+
+
+if [[ -f "$CUSTOM_FEEDS_FILE" ]]; then
+  log "Found custom feeds file: $CUSTOM_FEEDS_FILE"
+
+  FEED_CONF="feeds.conf.default"
+  if [[ ! -f "$FEED_CONF" ]]; then
+    FEED_CONF="feeds.conf"
+    if [[ ! -f "$FEED_CONF" ]]; then
+      log "Error: neither feeds.conf.default nor feeds.conf found; cannot apply custom feeds."
+      exit 1
+    fi
+  fi
+
+  BEGIN_MARK="# --- custom_feeds.txt BEGIN ---"
+  END_MARK="# --- custom_feeds.txt END ---"
+
+  if grep -qF "$BEGIN_MARK" "$FEED_CONF"; then
+    log "Removing previous custom feeds block from $FEED_CONF"
+    sed -i "/^${BEGIN_MARK}\$/,/^${END_MARK}\$/d" "$FEED_CONF"
+  fi
+
+  log "Appending custom feeds into $FEED_CONF"
+  {
+    echo ""
+    echo "$BEGIN_MARK"
+    sed 's/\r$//' "$CUSTOM_FEEDS_FILE"
+    echo "$END_MARK"
+  } >> "$FEED_CONF"
+else
+  log "No custom_feeds.txt at $CUSTOM_FEEDS_FILE (skipping custom feeds)."
+fi
++
+
 
 
 log "Updating feeds..."

@@ -2,3 +2,4 @@ openwrt/
 *.bin
 # my secret feeds come to with word 'secret
 /custom_feeds*secret*.txt
+/*secret*

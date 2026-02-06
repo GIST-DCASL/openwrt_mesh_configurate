@@ -14,8 +14,8 @@ DEST_DIR="${REPO_ROOT}/openwrt"
 REMOTE="$REMOTE_DEFAULT"
 APPLY_OVERLAY=1                  
 QUIET=0
-CUSTOM_FEEDS_FILE="${REPO_ROOT}/custom_feeds.txt"
-
+#CUSTOM_FEEDS_FILE="${REPO_ROOT}/custom_feeds.txt"
+CUSTOM_FEEDS_GLOB="${REPO_ROOT}/custom_feeds"*.txt
 
 usage() {
   cat <<EOF
@@ -98,8 +98,18 @@ fi
 
 
 
-if [[ -f "$CUSTOM_FEEDS_FILE" ]]; then
-  log "Found custom feeds file: $CUSTOM_FEEDS_FILE"
+#
+# Apply custom feeds (optional)
+# - Apply all files matching ${REPO_ROOT}/custom_feeds*.txt
+# - Idempotent: remove previous injected block first to avoid duplicates
+#
+shopt -s nullglob
+custom_feed_files=( $CUSTOM_FEEDS_GLOB )
+shopt -u nullglob
+
+if (( ${#custom_feed_files[@]} > 0 )); then
+  IFS=$'\n' custom_feed_files=($(printf '%s\n' "${custom_feed_files[@]}" | sort))
+  unset IFS
 
   FEED_CONF="feeds.conf.default"
   if [[ ! -f "$FEED_CONF" ]]; then
@@ -110,25 +120,35 @@ if [[ -f "$CUSTOM_FEEDS_FILE" ]]; then
     fi
   fi
 
-  BEGIN_MARK="# --- custom_feeds.txt BEGIN ---"
-  END_MARK="# --- custom_feeds.txt END ---"
+  BEGIN_MARK="# --- custom_feeds*.txt BEGIN ---"
+  END_MARK="# --- custom_feeds*.txt END ---"
+
 
   if grep -qF "$BEGIN_MARK" "$FEED_CONF"; then
     log "Removing previous custom feeds block from $FEED_CONF"
     sed -i "/^${BEGIN_MARK}\$/,/^${END_MARK}\$/d" "$FEED_CONF"
   fi
 
-  log "Appending custom feeds into $FEED_CONF"
+  log "Appending custom feeds from files:"
+  for f in "${custom_feed_files[@]}"; do
+    log "  - $(basename "$f")"
+  done
+
   {
     echo ""
     echo "$BEGIN_MARK"
-    sed 's/\r$//' "$CUSTOM_FEEDS_FILE"
+    for f in "${custom_feed_files[@]}"; do
+      echo "# from: $(basename "$f")"
+      # CRLF 정리 + 그대로 삽입
+      sed 's/\r$//' "$f"
+      echo ""
+    done
     echo "$END_MARK"
   } >> "$FEED_CONF"
 else
-  log "No custom_feeds.txt at $CUSTOM_FEEDS_FILE (skipping custom feeds)."
+  log "No custom_feeds*.txt in $REPO_ROOT (skipping custom feeds)."
 fi
-+
+
 
 
 

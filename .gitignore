@@ -3,3 +3,6 @@ openwrt/
 # my secret feeds come to with word 'secret
 /custom_feeds*secret*.txt
 /*secret*
+/openwrt_mesh_additional_setup/*
+/openwrt_mesh_additional_setup/
+

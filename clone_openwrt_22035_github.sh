@@ -139,8 +139,11 @@ if (( ${#custom_feed_files[@]} > 0 )); then
     echo "$BEGIN_MARK"
     for f in "${custom_feed_files[@]}"; do
       echo "# from: $(basename "$f")"
-      # CRLF 정리 + 그대로 삽입
-      sed 's/\r$//' "$f"
+      sed -e 's/\r$//' \
+          -e '/^[[:space:]]*#/d' \
+          -e '/^[[:space:]]*$/d' \
+          "$f"
+
       echo ""
     done
     echo "$END_MARK"

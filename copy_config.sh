@@ -61,6 +61,9 @@ if [[ -z "$BUILD_MODE" ]]; then
   done
 fi
 
+
+
+
 log "Selected Mode: $BUILD_MODE"
 
 if [[ ! -d "$TARGET_DIR" ]]; then
@@ -73,6 +76,40 @@ if [[ -f "$CONFIG_FILE" ]]; then
   log "Found config file: $CONFIG_FILE"
   log "Copying to ${TARGET_DIR}/.config"
   cp "$CONFIG_FILE" "${TARGET_DIR}/.config"
+
+
+    # ------------------------------------------------------------
+  # Apply additional diffconfigs: "<CONFIG_FILE>.*" (e.g., diffconfig.*)
+  # Later files override earlier ones (overlay semantics)
+  # ------------------------------------------------------------
+  shopt -s nullglob
+  EXTRA_CONFIGS=( "${CONFIG_FILE}".* )
+  shopt -u nullglob
+
+  if (( ${#EXTRA_CONFIGS[@]} > 0 )); then
+    # deterministic order
+    IFS=$'\n' EXTRA_CONFIGS=($(printf '%s\n' "${EXTRA_CONFIGS[@]}" | sort))
+    unset IFS
+    log "Found extra diffconfigs:"
+    for f in "${EXTRA_CONFIGS[@]}"; do
+      log "  - $(basename "$f")"
+    done
+
+    for f in "${EXTRA_CONFIGS[@]}"; do
+      log "Merging: $(basename "$f")  ->  ${TARGET_DIR}/.config"
+      {
+        echo ""
+        echo "# --- merged from: $(basename "$f") ---"
+        # normalize CRLF + allow comments/blank lines in diffconfig.* (ignored)
+        sed -e 's/\r$//' \
+            -e '/^[[:space:]]*#/d' \
+            -e '/^[[:space:]]*$/d' \
+            "$f"
+      } >> "${TARGET_DIR}/.config"
+    done
+  else
+    log "No extra diffconfigs matching: ${CONFIG_FILE}.*"
+  fi
 
   CURRENT_VERSION=$(grep "^CONFIG_VERSION_NUMBER=" "${TARGET_DIR}/.config" | cut -d'=' -f2 | tr -d '"')
 

@@ -50,6 +50,38 @@ fi
 
 cd "$OPENWRT_DIR"
 
+CUSTOM_SCRIPT="files/etc/uci-defaults/98_network_custom_setting"
+if [[ -f ".config" && -f "$CUSTOM_SCRIPT" ]]; then
+  MESH_IP=$(grep "network.meshif.ipaddr=" "$CUSTOM_SCRIPT" | head -n 1 | sed -n "s/.*ipaddr='\([^']*\)'.*/\1/p" || true)
+  if [[ -n "$MESH_IP" ]]; then
+    IP_SUFFIX="${MESH_IP##*.}"
+    if [[ "$IP_SUFFIX" =~ ^[0-9]+$ ]] && (( IP_SUFFIX >= 0 && IP_SUFFIX <= 255 )); then
+      echo -e "${GREEN}Stamping VERSION_CODE from mesh IP:${NC} $MESH_IP  ->  ip${IP_SUFFIX}"
+
+      # Ensure VERSIONOPT is enabled (VERSION_CODE options are under it)
+      if ! grep -q '^CONFIG_VERSIONOPT=y' .config; then
+        echo "CONFIG_VERSIONOPT=y" >> .config
+      fi
+
+      # Avoid duplicate lines if re-running
+      sed -i \
+        -e '/^CONFIG_VERSION_CODE=/d' \
+        -e '/^CONFIG_VERSION_CODE_FILENAMES=/d' \
+        .config
+
+      echo "CONFIG_VERSION_CODE_FILENAMES=y" >> .config
+      echo "CONFIG_VERSION_CODE=\"ip${IP_SUFFIX}\"" >> .config
+    else
+      echo -e "${YELLOW}Warning:${NC} invalid last octet from IP '$MESH_IP' -> skip filename tag"
+    fi
+  else
+    echo -e "${YELLOW}Notice:${NC} mesh IP not found in $CUSTOM_SCRIPT -> skip filename tag"
+  fi
+else
+  echo -e "${YELLOW}Notice:${NC} missing .config or $CUSTOM_SCRIPT -> skip filename tag"
+fi
+
+
 # 1. 빌드 수행
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   if [[ ! -f ".config" ]]; then

@@ -11,10 +11,10 @@ MESH_KEY="your_key"
 
 
 
-SCRIPT_CLONE="./clone_openwrt22035_github.sh"
-SCRIPT_CONFIG="./copy_config.sh"
-SCRIPT_CUSTOM="./customize_mesh.sh"
-SCRIPT_BUILD="./build_firmware.sh"
+SCRIPT_CLONE="./1_clone_openwrt22035_github.sh"
+SCRIPT_CONFIG="./2_copy_config.sh"
+SCRIPT_CUSTOM="./3_customize_mesh.sh"
+SCRIPT_BUILD="./4_build_firmware.sh"
 
 
 GREEN='\033[0;32m'

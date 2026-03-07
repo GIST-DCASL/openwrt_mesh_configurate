@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR" && pwd)"
 OPENWRT_DIR="${REPO_ROOT}/openwrt"
-DEST_DIR="${REPO_ROOT}" # 결과물을 복사할 루트 경로
+DEST_DIR="${REPO_ROOT}/firmware" # 결과물을 복사할 루트 경로
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -108,7 +108,6 @@ fi
 
 echo "Searching for sysupgrade.bin..."
 
-
 FOUND_FILES=$(find bin/targets -type f -name "*sysupgrade.bin" 2>/dev/null || true)
 
 if [[ -z "$FOUND_FILES" ]]; then
@@ -117,11 +116,17 @@ if [[ -z "$FOUND_FILES" ]]; then
   exit 1
 fi
 
+# 펌웨어 폴더가 없으면 자동 생성
+if [[ ! -d "$DEST_DIR" ]]; then
+  mkdir -p "$DEST_DIR"
+  echo -e "${GREEN}Created directory:${NC} $DEST_DIR"
+fi
+
 COUNT=0
 for FILE in $FOUND_FILES; do
   BASENAME=$(basename "$FILE")
   
-
+  # 파일 복사
   cp "$FILE" "${DEST_DIR}/"
   
   echo -e "${GREEN}Copied:${NC} $FILE"
@@ -130,7 +135,7 @@ for FILE in $FOUND_FILES; do
 done
 
 if [[ "$COUNT" -gt 0 ]]; then
-  echo -e "${GREEN}Success! $COUNT file(s) copied to root.${NC}"
+  echo -e "${GREEN}Success! $COUNT file(s) copied to firmware folder.${NC}"
 else
   echo "Something went wrong. No files copied."
 fi

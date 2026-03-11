@@ -120,6 +120,7 @@ if [[ -z "$FOUND_FILES" ]]; then
 fi
 
 
+
 if [[ ! -d "$DEST_DIR" ]]; then
   mkdir -p "$DEST_DIR"
   echo -e "${GREEN}Created directory:${NC} $DEST_DIR"
@@ -129,16 +130,15 @@ COUNT=0
 for FILE in $FOUND_FILES; do
   BASENAME=$(basename "$FILE")
   
-
-  cp "$FILE" "${DEST_DIR}/"
+  mv "$FILE" "${DEST_DIR}/"
   
-  echo -e "${GREEN}Copied:${NC} $FILE"
+  echo -e "${GREEN}Moved:${NC} $FILE"
   echo -e "     -> ${DEST_DIR}/$BASENAME"
   COUNT=$((COUNT+1))
 done
 
 if [[ "$COUNT" -gt 0 ]]; then
-  echo -e "${GREEN}Success! $COUNT file(s) copied to firmware folder.${NC}"
+  echo -e "${GREEN}Success! $COUNT file(s) moved to firmware folder.${NC}"
 else
-  echo "Something went wrong. No files copied."
+  echo -e "${YELLOW}Something went wrong. No files moved.${NC}"
 fi

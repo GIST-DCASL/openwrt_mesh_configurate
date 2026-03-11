@@ -11,6 +11,8 @@ Tested Environment : Ubuntu 22.04
 - Execute `0_main_launcher.sh` to do all procedure. If something's wrong, you can use each step's script manually. 
 - Procedure(Manual) : `1_clone_openwrt_22035_github.sh` > `2_copy_config.sh` > `3_customize_mesh.sh` > `4_build_firmware.sh`
 
+- Note: folder or file with `secret` or `private` will not affected to git. This is for user's private modification. 
+
 ## Korean
 ad-hoc 모듈 펌웨어를 다운로드, 설치, 구성하기 위한 자동화 스크립트입니다.
 
@@ -20,3 +22,5 @@ ad-hoc 모듈 펌웨어를 다운로드, 설치, 구성하기 위한 자동화 �
 - Tested Device : GL-MT300Nv2(기본), Omega Onion2P, GL-AR300M16-Ext(Beta)
 - `0_main_launcher.sh` 를 실행하면 자동으로 진행됩니다. 잘못될 경우, 수동으로 일부 과정을 단계적으로 실행할 수 있습니다.
 - 수동 순서 : `1_clone_openwrt_22035_github.sh` > `2_copy_config.sh` > `3_customize_mesh.sh` > `4_build_firmware.sh`
+
+- 참고: `secret` 이나 `private` 를 포함한 파일 및 폴더는 git 동기화에 영향을 안받습니다. 이는 개인이 필요한 개조를 하기 위함입니다.

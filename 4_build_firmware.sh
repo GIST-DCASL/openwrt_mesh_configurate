@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR" && pwd)"
 OPENWRT_DIR="${REPO_ROOT}/openwrt"
-DEST_DIR="${REPO_ROOT}/firmware" # 결과물을 복사할 루트 경로
+DEST_DIR="${REPO_ROOT}/firmware"
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-
 SKIP_BUILD=0
 VERBOSE=0
-
+DO_CLEAN=0 
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -25,18 +23,21 @@ Usage: $(basename "$0") [options]
 
 Options:
   --no-build          Skip compilation, only copy existing binaries
+  --clean             Run 'make clean' before building (Full rebuild)
   -v, --verbose       Show verbose build output (make V=s)
   -h, --help          Show this help
 
 Description:
   Runs 'make -j$(nproc)' in the OpenWrt directory and copies 
   the resulting *sysupgrade.bin file to the script's directory.
+  By default, it performs an INCREMENTAL BUILD (without 'clean').
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-build) SKIP_BUILD=1; shift ;;
+    --clean) DO_CLEAN=1; shift ;;
     -v|--verbose) VERBOSE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
@@ -58,11 +59,9 @@ if [[ -f ".config" && -f "$CUSTOM_SCRIPT" ]]; then
     if [[ "$IP_SUFFIX" =~ ^[0-9]+$ ]] && (( IP_SUFFIX >= 0 && IP_SUFFIX <= 255 )); then
       echo -e "${GREEN}Stamping VERSION_CODE from mesh IP:${NC} $MESH_IP  ->  ip${IP_SUFFIX}"
 
-
       if ! grep -q '^CONFIG_VERSIONOPT=y' .config; then
         echo "CONFIG_VERSIONOPT=y" >> .config
       fi
-
 
       sed -i \
         -e '/^CONFIG_VERSION_CODE=/d' \
@@ -81,8 +80,6 @@ else
   echo -e "${YELLOW}Notice:${NC} missing .config or $CUSTOM_SCRIPT -> skip filename tag"
 fi
 
-
-
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   if [[ ! -f ".config" ]]; then
     echo -e "${RED}Error: .config file missing. Please run setup_config.sh or make menuconfig first.${NC}"
@@ -90,12 +87,19 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
   fi
 
   echo -e "${GREEN}Starting OpenWrt build using $(nproc) threads...${NC}"
-  echo "This may take a long time."
   
-  BUILD_CMD="make defconfig download clean world -j$(nproc)"
+  
+  if [[ "$DO_CLEAN" -eq 1 ]]; then
+    echo -e "${YELLOW}Performing FULL BUILD (make clean included). This may take a long time.${NC}"
+    BUILD_CMD="make defconfig download clean world -j$(nproc)"
+  else
+    echo -e "${GREEN}Performing INCREMENTAL BUILD.${NC}"
+    BUILD_CMD="make defconfig download world -j$(nproc)"
+  fi
+  
   [[ "$VERBOSE" -eq 1 ]] && BUILD_CMD="$BUILD_CMD V=s"
 
-  if $BUILD_CMD; then
+  if eval $BUILD_CMD; then
     echo -e "${GREEN}Build completed successfully.${NC}"
   else
     echo -e "${RED}Build failed.${NC}"
@@ -104,7 +108,6 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
 else
   echo -e "${YELLOW}Skipping build step (copy-only mode).${NC}"
 fi
-
 
 echo "Searching for sysupgrade.bin..."
 
@@ -116,7 +119,7 @@ if [[ -z "$FOUND_FILES" ]]; then
   exit 1
 fi
 
-# 펌웨어 폴더가 없으면 자동 생성
+
 if [[ ! -d "$DEST_DIR" ]]; then
   mkdir -p "$DEST_DIR"
   echo -e "${GREEN}Created directory:${NC} $DEST_DIR"
@@ -126,7 +129,7 @@ COUNT=0
 for FILE in $FOUND_FILES; do
   BASENAME=$(basename "$FILE")
   
-  # 파일 복사
+
   cp "$FILE" "${DEST_DIR}/"
   
   echo -e "${GREEN}Copied:${NC} $FILE"

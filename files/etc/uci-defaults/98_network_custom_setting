@@ -3,32 +3,98 @@
 
 set -eu
 
+SCRIPT_NAME="98_network_custom_setting"
+PREFERRED_LOG_DIR="/usr/share/uci-defaults-log"
+FALLBACK_LOG_DIR="/tmp/uci-defaults-log"
+LOG_DIR="$PREFERRED_LOG_DIR"
+
+if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
+    LOG_DIR="$FALLBACK_LOG_DIR"
+    mkdir -p "$LOG_DIR"
+fi
+
+LOG_FILE="$LOG_DIR/${SCRIPT_NAME}.log"
+STATUS_FILE="$LOG_DIR/${SCRIPT_NAME}.status"
+
+timestamp() {
+    date '+%Y-%m-%d %H:%M:%S'
+}
+
+log() {
+    local msg="$*"
+    echo "[$(timestamp)] $msg" >> "$LOG_FILE" 2>/dev/null || true
+    logger -t "$SCRIPT_NAME" -- "$msg" 2>/dev/null || true
+}
+
+write_status() {
+    local result="$1"
+    {
+        echo "script=$SCRIPT_NAME"
+        echo "time=$(timestamp)"
+        echo "log_dir=$LOG_DIR"
+        echo "result=$result"
+    } > "$STATUS_FILE" 2>/dev/null || true
+}
+
+log_uci() {
+    local key="$1"
+    local val
+    val="$(uci -q get "$key" 2>/dev/null || echo unset)"
+    log "UCI $key='$val'"
+}
+
+trap '
+rc=$?
+trap - EXIT
+if [ "$rc" -eq 0 ]; then
+    log "END success"
+    write_status "success"
+else
+    log "END failure rc=$rc"
+    write_status "failure:$rc"
+fi
+exit "$rc"
+' EXIT
+
+log "START"
+log "Selected log directory: $LOG_DIR"
+
 # ========================================================
-# 0: Router Mode (기본값)
-# 1: Bridge Mode (Mesh AP 모드)
+# 0: Router Mode (mesh router mode)
+# 1: Bridge Mode (mesh bridge mode)
 is_bridge=0
 # ========================================================
 
+log "Configured is_bridge='$is_bridge'"
+
 find_anon_by_opt() {
-  local pkg="$1" type="$2" opt="$3" val="$4"
-  uci -q show "$pkg" | sed -n "s/^${pkg}\.\(@${type}\[[0-9]\+\]\)\.${opt}='${val}'$/\1/p" | head -n1
+    local pkg="$1" type="$2" opt="$3" val="$4"
+    uci -q show "$pkg" | sed -n "s/^${pkg}\.\(@${type}\[[0-9]\+\]\)\.${opt}='${val}'$/\1/p" | head -n1
 }
 
-wan_dev=$(uci -q get network.wan.device || true)
-lan_dev=$(uci -q get network.lan.device || true)
+wan_dev="$(uci -q get network.wan.device || true)"
+lan_dev="$(uci -q get network.lan.device || true)"
 
+log "Detected wan_dev='${wan_dev:-}' lan_dev='${lan_dev:-}'"
 
 if [ -n "$wan_dev" ] && [ -n "$lan_dev" ]; then
-    :
+    log "Both network.wan.device and network.lan.device already exist; keeping base WAN/LAN layout"
 elif [ "$is_bridge" != "1" ]; then
+    log "Router mode branch entered"
     if [ -z "$wan_dev" ] && [ -n "$lan_dev" ]; then
-        lan_ports=$(uci -q get network."$lan_dev".ports || echo "$lan_dev")
+        lan_ports="$(uci -q get network."$lan_dev".ports || echo "$lan_dev")"
+        log "Creating network.wan.device from LAN side ports='$lan_ports'"
         uci -q set network.wan.device="$lan_ports"
         uci -q delete network.lan
         uci -q commit network
+        log "Committed network after router-mode WAN/LAN reshape"
+    else
+        log "Router mode reshape not required"
     fi
 else
+    log "Bridge mode branch entered"
     if [ -z "$lan_dev" ] && [ -n "$wan_dev" ]; then
+        log "Recreating LAN bridge from wan_dev='$wan_dev'"
         uci -q set network.lan='interface'
         uci -q set network.lan.device='br-lan'
         uci -q set network.br-lan='device'
@@ -36,10 +102,14 @@ else
         uci -q set network.br-lan.ports="$wan_dev"
         uci -q delete network.wan
         uci -q commit network
+        log "Committed network after bridge-mode LAN rebuild"
+    else
+        log "Bridge mode LAN rebuild not required"
     fi
 fi
 
 if [ "$is_bridge" != "1" ]; then
+    log "Configuring dhcp.meshif"
     uci -q delete dhcp.meshif 2>/dev/null || true
     uci -q set dhcp.meshif='dhcp'
     uci -q set dhcp.meshif.interface='meshif'
@@ -48,8 +118,12 @@ if [ "$is_bridge" != "1" ]; then
     uci -q set dhcp.meshif.leasetime='6h'
     uci -q set dhcp.meshif.ra='server'
     uci -q commit dhcp
+    log "Committed dhcp.meshif"
+else
+    log "Bridge mode: dhcp.meshif creation skipped"
 fi
 
+log "Configuring batman-adv interfaces"
 uci -q delete network.bat0 2>/dev/null || true
 uci -q set network.bat0='interface'
 uci -q set network.bat0.proto='batadv'
@@ -65,10 +139,13 @@ uci -q set network.bat0.orig_interval='1000'
 
 if [ "$is_bridge" = "1" ]; then
     uci -q set network.bat0.gw_mode='client'
+    log "Set network.bat0.gw_mode='client'"
 else
     uci -q set network.bat0.gw_mode='server'
     uci -q set network.bat0.gw_bandwidth='10000/2000'
+    log "Set network.bat0.gw_mode='server' gw_bandwidth='10000/2000'"
 fi
+
 uci -q set network.bat0.hop_penalty='25'
 uci -q set network.bat0.isolation_mark='0x00000000/0x00000000'
 uci -q set network.bat0.log_level='0'
@@ -81,40 +158,46 @@ uci -q set network.mesh.proto='batadv_hardif'
 uci -q set network.mesh.master='bat0'
 uci -q set network.mesh.mtu='1536'
 
-brmesh="br-meshif"
-
-br_mesh_section=$(find_anon_by_opt network device name "$brmesh")
+brmesh='br-meshif'
+br_mesh_section="$(find_anon_by_opt network device name "$brmesh" || true)"
 if [ -z "$br_mesh_section" ]; then
-    br_mesh_section=$(uci add network device)
+    br_mesh_section="$(uci add network device)"
     uci set network."$br_mesh_section".name="$brmesh"
+    log "Created new network device section '$br_mesh_section' for $brmesh"
+else
+    log "Reusing existing network device section '$br_mesh_section' for $brmesh"
 fi
 
 uci set network."$br_mesh_section".type='bridge'
 uci -q delete network."$br_mesh_section".ports 2>/dev/null || true
 uci add_list network."$br_mesh_section".ports='bat0'
-
+log "Set $brmesh ports to include bat0"
 
 if [ "$is_bridge" = "1" ]; then
-	lan_dev_name="$(uci -q get network.lan.device || true)"
+    lan_dev_name="$(uci -q get network.lan.device || true)"
+    log "Bridge mode LAN device for merge='${lan_dev_name:-}'"
 
-	if [ -n "$lan_dev_name" ]; then
-		lan_dev_sec="$(find_anon_by_opt network device name "$lan_dev_name" || true)"
+    if [ -n "$lan_dev_name" ]; then
+        lan_dev_sec="$(find_anon_by_opt network device name "$lan_dev_name" || true)"
+        [ -n "$lan_dev_sec" ] || lan_dev_sec="$lan_dev_name"
 
-		[ -n "$lan_dev_sec" ] || lan_dev_sec="$lan_dev_name"
+        current_lan_ports="$(uci -q get network."$lan_dev_sec".ports || true)"
+        log "Current LAN bridge section='$lan_dev_sec' ports='${current_lan_ports:-}'"
 
-		current_lan_ports="$(uci -q get network."$lan_dev_sec".ports || true)"
+        for port in $current_lan_ports; do
+            uci add_list network."$br_mesh_section".ports="$port"
+            log "Added LAN port '$port' into $brmesh"
+        done
 
-		for port in $current_lan_ports; do
-		uci add_list network."$br_mesh_section".ports="$port"
-		done
-
-		uci -q delete network."$lan_dev_sec".ports || true
-		uci -q delete network.lan || true
-	fi
-    
-
+        uci -q delete network."$lan_dev_sec".ports || true
+        uci -q delete network.lan || true
+        log "Removed old LAN bridge/member configuration after merge"
+    else
+        log "Bridge mode LAN merge skipped because network.lan.device is empty"
+    fi
 fi
 
+log "Configuring network.meshif"
 uci -q delete network.meshif 2>/dev/null || true
 uci -q set network.meshif='interface'
 uci -q set network.meshif.device='br-meshif'
@@ -127,8 +210,16 @@ uci -q add_list network.meshif.dns='203.237.32.100'
 uci -q set network.meshif.ipv6='1'
 
 uci -q commit network
+log "Committed network mesh/batadv configuration"
 
-[ -f /etc/config/wireless ] || wifi config
+if [ ! -f /etc/config/wireless ]; then
+    log "wireless config not found; running 'wifi config'"
+    wifi config
+else
+    log "wireless config already exists"
+fi
+
+log "Configuring wireless.wmesh"
 uci -q set wireless.radio0.disabled='0'
 uci -q delete wireless.default_radio0 2>/dev/null || true
 uci -q delete wireless.wmesh 2>/dev/null || true
@@ -144,12 +235,17 @@ uci -q set wireless.wmesh.mesh_fwding='0'
 uci -q set wireless.wmesh.mesh_ttl='1'
 uci -q set wireless.wmesh.disabled='0'
 uci -q commit wireless
+log "Committed wireless mesh configuration"
 
-
+log "Configuring firewall zone/forwarding for meshif"
 z="$(find_anon_by_opt firewall zone name meshif || true)"
 if [ -z "${z:-}" ]; then
-  z="$(uci -q add firewall zone)"
+    z="$(uci -q add firewall zone)"
+    log "Created new firewall zone section '$z' for meshif"
+else
+    log "Reusing existing firewall zone section '$z' for meshif"
 fi
+
 uci -q set firewall."$z".name='meshif'
 uci -q delete firewall."$z".network 2>/dev/null || true
 uci -q add_list firewall."$z".network='meshif'
@@ -160,13 +256,35 @@ uci -q set firewall."$z".forward='ACCEPT'
 f="$(uci -q add firewall forwarding)"
 uci -q set firewall."$f".src='meshif'
 uci -q set firewall."$f".dest='wan'
+log "Added firewall forwarding section '$f' from meshif to wan"
 
 w="$(find_anon_by_opt firewall zone name wan || true)"
 if [ -n "${w:-}" ]; then
-  uci -q set firewall."$w".input='ACCEPT'
-  uci -q set firewall."$w".forward='ACCEPT'
+    uci -q set firewall."$w".input='ACCEPT'
+    uci -q set firewall."$w".forward='ACCEPT'
+    log "Relaxed existing wan zone '$w' to input/forward ACCEPT"
+else
+    log "No existing wan zone found"
 fi
 
 uci -q commit firewall
+log "Committed firewall configuration"
+
+log "Final summary follows"
+log_uci network.wan.device
+log_uci network.lan.device
+log_uci network.bat0.proto
+log_uci network.bat0.gw_mode
+log_uci network.bat0.gw_bandwidth
+log_uci network.mesh.proto
+log_uci network.mesh.master
+log_uci network.meshif.device
+log_uci network.meshif.ipaddr
+log_uci wireless.wmesh.mode
+log_uci wireless.wmesh.mesh_id
+log_uci wireless.wmesh.network
+log_uci firewall."$z".name
+log_uci firewall."$z".input
+log_uci firewall."$z".forward
 
 exit 0

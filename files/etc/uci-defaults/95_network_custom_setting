@@ -1,9 +1,9 @@
 #!/bin/sh
-# /etc/uci-defaults/98_network_custom_setting
+# /etc/uci-defaults/95_network_custom_setting
 
 set -eu
 
-SCRIPT_NAME="98_network_custom_setting"
+SCRIPT_NAME="95_network_custom_setting"
 SCRIPT_VERSION="2026-03-13-softlog-v1"
 
 # ========================================================

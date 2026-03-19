@@ -176,7 +176,7 @@ if [[ -d "$FILES_DIR" ]]; then
       fi
   fi
 
-  CUSTOM_SCRIPT="${DEST_FILES_DIR}/etc/uci-defaults/98_network_custom_setting"
+  CUSTOM_SCRIPT="${DEST_FILES_DIR}/etc/uci-defaults/95_network_custom_setting"
   
   if [[ -f "$CUSTOM_SCRIPT" ]]; then
       if [[ "$BUILD_MODE" == "bridge" ]]; then

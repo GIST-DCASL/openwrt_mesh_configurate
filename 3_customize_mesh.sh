@@ -2,7 +2,7 @@
 set -euo pipefail
 
 
-DEFAULT_TARGET="./openwrt/files/etc/uci-defaults/98_network_custom_setting"
+DEFAULT_TARGET="./openwrt/files/etc/uci-defaults/95_network_custom_setting"
 
 TARGET_FILE="$DEFAULT_TARGET"
 NEW_IP=""

@@ -51,7 +51,7 @@ fi
 
 cd "$OPENWRT_DIR"
 
-CUSTOM_SCRIPT="files/etc/uci-defaults/98_network_custom_setting"
+CUSTOM_SCRIPT="files/etc/uci-defaults/95_network_custom_setting"
 if [[ -f ".config" && -f "$CUSTOM_SCRIPT" ]]; then
   MESH_IP=$(grep "network.meshif.ipaddr=" "$CUSTOM_SCRIPT" | head -n 1 | sed -n "s/.*ipaddr='\([^']*\)'.*/\1/p" || true)
   if [[ -n "$MESH_IP" ]]; then

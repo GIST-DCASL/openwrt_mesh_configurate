@@ -121,21 +121,26 @@ fi
 
 
 
-if [[ ! -d "$DEST_DIR" ]]; then
-  mkdir -p "$DEST_DIR"
-  echo -e "${GREEN}Created directory:${NC} $DEST_DIR"
+BUILD_DATE=$(date +"%Y%m%d")
+TARGET_DIR="${DEST_DIR}/${BUILD_DATE}"
+
+if [[ ! -d "$TARGET_DIR" ]]; then
+  mkdir -p "$TARGET_DIR"
+  echo -e "${GREEN}Created directory:${NC} $TARGET_DIR"
 fi
 
 COUNT=0
 for FILE in $FOUND_FILES; do
   BASENAME=$(basename "$FILE")
   
-  mv "$FILE" "${DEST_DIR}/"
+
+  mv "$FILE" "${TARGET_DIR}/"
   
   echo -e "${GREEN}Moved:${NC} $FILE"
-  echo -e "     -> ${DEST_DIR}/$BASENAME"
+  echo -e "     -> ${TARGET_DIR}/$BASENAME"
   COUNT=$((COUNT+1))
 done
+
 
 if [[ "$COUNT" -gt 0 ]]; then
   echo -e "${GREEN}Success! $COUNT file(s) moved to firmware folder.${NC}"
